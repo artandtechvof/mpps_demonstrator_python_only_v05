@@ -7,7 +7,7 @@ let FirstClaimDestination = true
 //  True: wait for destination area te be cleared.
 //  False: turn towards destination even if it is occupied
 let UseFleetmanager = true
-let ID = 2
+let ID = 1
 let DEBUG = false
 let UseHusky = true
 let DisplayDelay = 200

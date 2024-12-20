@@ -4,7 +4,7 @@ HIL_Simulation = False
 FirstClaimDestination = True # True: wait for destination area te be cleared.
                              # False: turn towards destination even if it is occupied
 UseFleetmanager = True                             
-ID = 2
+ID = 1
 
 DEBUG = False
 
