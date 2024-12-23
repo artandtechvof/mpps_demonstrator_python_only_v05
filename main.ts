@@ -76,10 +76,10 @@ let CLOSED = 0
 let AHEAD = 0
 let LEFT = 1
 let RIGHT = 2
-let MAXSPEED = 18
+let MAXSPEED = 25
 let MINSPEED = 15
 let MINYAWSPEED = 8
-let MAXYAWSPEED = 12
+let MAXYAWSPEED = 14
 let BACKUPSPEED = -20
 let BACKUPDISTANCE = 20
 let OBJECT_THRESHOLD = 0
@@ -113,10 +113,10 @@ let RadioTxPending = false
 let tagID = 1
 //  tagIDs = [1 tm 6]
 let tagSizes = [0, 85, 90, 90, 90, 85, 88, 88, 88, 88, 88, 55, 55, 55, 55]
-// 5x waiting, 1 central, 4 targets, 4 objects
+//  5x waiting, 1 central, 4 targets, 4 objects
 let tagSize = tagSizes[tagID]
 let zeroes = [0]
-while (i < 100) {
+while (i < tagSizes.length) {
     zeroes.push(0)
     i += 1
 }
@@ -190,6 +190,7 @@ class Robot {
     backup_distance: number
     distance_to_target: number
     backup_starttime: number
+    looking_for_object: number
     route_length: number
     route_reported: boolean
     obstacle_detected: boolean
@@ -222,6 +223,7 @@ class Robot {
         this.backup_distance = 0
         this.distance_to_target = 0
         this.backup_starttime = 0
+        this.looking_for_object = 0
         this.route_length = 0
         this.route_reported = false
         this.obstacle_detected = false
@@ -309,7 +311,7 @@ function find_target(_robot: Robot = new Robot()): number {
         _robot.target = _robot.destination
     }
     
-    //  We are looking for and driving to an object    
+    //  We are looking for and driving to an object
     if (_robot.targettype == OBJECT_t) {
         //  start looking for the object
         _robot.target = obj[_robot.objecttype]
@@ -326,15 +328,32 @@ function find_target(_robot: Robot = new Robot()): number {
 // ---------------------------------------------------------------------------------------------------------
 // function to search target
 // ---------------------------------------------------------------------------------------------------------
-function pulse(_dir: number = LEFT): number {
+function pulse(_dir: number = LEFT, _robot: Robot = new Robot()): number {
+    let time_looking: number;
     let turn_speed: number;
     // pulsing behaviour
-    let pulse_duration = 1000
+    let pulse_duration = 700
     //  Duration of one complete pulse cycle
-    let active_ratio = 0.20
+    let active_ratio = 0.2
     //  Ratio of time the robot is actively turning within a pulse
-    let base_speed = 14
-    let speed_multiplier = 1.25
+    let base_speed = 15
+    let speed_multiplier = 2
+    if (robot.state == FINDOBJECT) {
+        speed_multiplier = 1.5
+        if (robot.looking_for_object == 0) {
+            _robot.looking_for_object = input.runningTime()
+        } else {
+            time_looking = input.runningTime() - _robot.looking_for_object
+            if (time_looking < 2000) {
+                _dir = LEFT
+            } else {
+                _dir = RIGHT
+            }
+            
+        }
+        
+    }
+    
     // if start_searching == 0: # als
     //     start_searching = input.running_time()
     // calculate searching time
@@ -351,11 +370,10 @@ function pulse(_dir: number = LEFT): number {
         turn_speed = base_speed
     }
     
-    if (_dir == RIGHT) {
+    if (_dir == LEFT) {
         turn_speed = -turn_speed
     }
     
-    turn_speed = -turn_speed
     return turn_speed
 }
 
@@ -388,7 +406,7 @@ function move_robot(_robot: Robot = new Robot()): number {
     // if target is not in view turn around to look for target, use pulsed turning to speed up process
     if (!_robot.target_inview) {
         _robot.speed = 0
-        _robot.yaw_speed = pulse(_robot.target_direction)
+        _robot.yaw_speed = pulse(_robot.target_direction, _robot)
     } else {
         //  if target is in view
         //  heading / steering control
@@ -399,7 +417,7 @@ function move_robot(_robot: Robot = new Robot()): number {
         _robot.distance_to_target = dist_err
         //  store on instance of robot, for logistical and rouet handling
         //  heading control, simple P-control
-        Kp = 2.0
+        Kp = 1.0
         _robot.yaw_speed = -angle_err * Kp
         //  simple P-control of heading angle
         if (_robot.target_locked) {
@@ -409,7 +427,7 @@ function move_robot(_robot: Robot = new Robot()): number {
         }
         
         //  speed control, start driving when target is almost straight ahead of robot
-        if (Math.abs(angle_err) < 20) {
+        if (Math.abs(angle_err) < 10) {
             _robot.yaw_speed = 0
             _robot.target_locked = true
             //  speed control, simple P-control
@@ -483,6 +501,7 @@ function reverse_robot(_robot: Robot = new Robot()): boolean {
     //  have we driven far enough backward? distance is trigger, could also be timed reverse driving
     if (input.runningTime() - _robot.backup_starttime < 750) {
         //  0.75 seconds
+        _robot.looking_for_object = 0
         // if dist_err < _robot.backup_distance:
         _robot.speed = BACKUPSPEED
         _finished = false
@@ -1200,15 +1219,6 @@ serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function on_serial_
     
     
 })
-/** 
-def on_received_value(name, value):
-    if name == "speed":
-        speed = value
-    if name == "steer":
-        steer = value
-radio.on_received_value(on_received_value)# parameters
-
- */
 radio.onReceivedString(function on_radio_received(receivedString: string) {
     let _cmd: number;
     
@@ -1347,8 +1357,7 @@ control.inBackground(function on_in_background() {
         t_last = t_start
         huskylens.request()
         inview = huskylens.getBox(HUSKYLENSResultType_t.HUSKYLENSResultBlock)
-        tagsInView = [0]
-        // zeroes
+        tagsInView = zeroes
         k = 0
         while (k < inview) {
             tagsInView[k] = huskylens.readBox_ss(k + 1, Content3.ID)
@@ -1363,7 +1372,7 @@ control.inBackground(function on_in_background() {
             inview_count = 0
         } else {
             inview_count += 1
-            if (inview_count > 3) {
+            if (inview_count > 5) {
                 //  if 3 frames no valid tag, reset to 0
                 x = -1
                 y = -1

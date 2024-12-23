@@ -3,7 +3,7 @@ RandomDestination = False
 HIL_Simulation = False
 FirstClaimDestination = True # True: wait for destination area te be cleared.
                              # False: turn towards destination even if it is occupied
-UseFleetmanager = True                             
+UseFleetmanager = True
 ID = 1
 
 DEBUG = False
@@ -69,10 +69,10 @@ AHEAD = 0
 LEFT  = 1
 RIGHT = 2
 
-MAXSPEED = 18
+MAXSPEED = 25
 MINSPEED = 15
 MINYAWSPEED = 8
-MAXYAWSPEED = 12
+MAXYAWSPEED = 14
 BACKUPSPEED = -20
 BACKUPDISTANCE = 20
 
@@ -109,12 +109,12 @@ RadioTxPending = False
 
 tagID = 1
 # tagIDs = [1 tm 6]
-tagSizes = [0,  85, 90, 90, 90, 85,  88,  88, 88, 88, 88,  55, 55, 55, 55] #5x waiting, 1 central, 4 targets, 4 objects
+tagSizes = [0,  85, 90, 90, 90, 85,  88,  88, 88, 88, 88,  55, 55, 55, 55] # 5x waiting, 1 central, 4 targets, 4 objects
 
 tagSize = tagSizes[tagID]
 
 zeroes = [0]
-while i < 100:
+while i < len(tagSizes):
     zeroes.append(0)
     i += 1
 tagsInView = zeroes
@@ -186,6 +186,7 @@ class Robot:
         self.backup_distance = 0
         self.distance_to_target = 0
         self.backup_starttime = 0
+        self.looking_for_object = 0
         self.route_length = 0
         self.route_reported = False
         self.obstacle_detected = False
@@ -215,7 +216,7 @@ def calc_heading(_robot=Robot()):
 
     #angle error in pixels
     # x = position of tag in camera view, 320 wide, 160 is center
-    if HIL_Simulation: 
+    if HIL_Simulation:
         basic.pause(100)
         return 0
         
@@ -257,8 +258,8 @@ def calc_distance(_robot=Robot()):
 def find_target(_robot=Robot()):
     # We are driving towards a location
     if _robot.targettype == LOCATION_t:
-        _robot.target = _robot.destination 
-    # We are looking for and driving to an object    
+        _robot.target = _robot.destination
+    # We are looking for and driving to an object
     if _robot.targettype == OBJECT_t:
         # start looking for the object
         _robot.target = obj[_robot.objecttype] # obj location nr will become new target
@@ -273,13 +274,25 @@ def find_target(_robot=Robot()):
 #---------------------------------------------------------------------------------------------------------
 #function to search target
 #---------------------------------------------------------------------------------------------------------
-def pulse(_dir = LEFT):
-
+def pulse(_dir=LEFT,_robot=Robot()):
     #pulsing behaviour
-    pulse_duration = 1000  # Duration of one complete pulse cycle
-    active_ratio = 0.20  # Ratio of time the robot is actively turning within a pulse
-    base_speed = 14
-    speed_multiplier = 1.25
+    pulse_duration = 700  # Duration of one complete pulse cycle
+    active_ratio = 0.2  # Ratio of time the robot is actively turning within a pulse
+    base_speed = 15
+    speed_multiplier = 2
+
+    if robot.state == FINDOBJECT:
+        speed_multiplier = 1.5
+        if robot.looking_for_object == 0:
+            _robot.looking_for_object = input.running_time()
+        else:
+            time_looking = input.running_time() - _robot.looking_for_object
+            if time_looking < 2000:
+                 _dir = LEFT
+            else: _dir = RIGHT
+
+
+
 
     #if start_searching == 0: # als
     #    start_searching = input.running_time()
@@ -298,9 +311,9 @@ def pulse(_dir = LEFT):
     else:
         # During inactive pulse: stand still
         turn_speed = base_speed
- 
-    if _dir == RIGHT: turn_speed = -turn_speed
-    turn_speed = -turn_speed
+
+    if _dir == LEFT: turn_speed = -turn_speed
+
     return turn_speed
 
 
@@ -322,6 +335,9 @@ def move_robot(_robot=Robot()):
     #check if target is in sight
     if (_robot.target in tagsInView) or HIL_Simulation:
             _robot.target_inview = True
+                                              
+                                                      
+
     else:
         # add timeout before target is no longer in view???
         _robot.target_inview = False
@@ -330,7 +346,7 @@ def move_robot(_robot=Robot()):
     #if target is not in view turn around to look for target, use pulsed turning to speed up process
     if not _robot.target_inview:
         _robot.speed = 0
-        _robot.yaw_speed = pulse(_robot.target_direction)
+        _robot.yaw_speed = pulse(_robot.target_direction,_robot)
     # if target is in view
     else:
         # heading / steering control
@@ -339,7 +355,7 @@ def move_robot(_robot=Robot()):
         _robot.distance_to_target = dist_err # store on instance of robot, for logistical and rouet handling
 
         # heading control, simple P-control
-        Kp = 2.0
+        Kp = 1.0
         _robot.yaw_speed = -angle_err * Kp # simple P-control of heading angle
         if _robot.target_locked:
             _robot.yaw_speed = max(-MAXYAWSPEED, min(_robot.yaw_speed, MAXYAWSPEED))
@@ -347,7 +363,7 @@ def move_robot(_robot=Robot()):
             _robot.yaw_speed = max(-MAXYAWSPEED, min(_robot.yaw_speed, MAXYAWSPEED))
 
         # speed control, start driving when target is almost straight ahead of robot
-        if abs(angle_err) < 20:
+        if abs(angle_err) < 10:
             _robot.yaw_speed = 0
             _robot.target_locked = True
             # speed control, simple P-control
@@ -355,6 +371,7 @@ def move_robot(_robot=Robot()):
             _robot.speed = min(dist_err * Kp, MAXSPEED)
             # drive slow when approaching an object
             if _robot.state == GRABOBJECT: _robot.speed = min(MINSPEED, _robot.speed * Kp)
+            
         else:
             _robot.target_locked = False
 
@@ -371,9 +388,10 @@ def move_robot(_robot=Robot()):
         if _robot.speed > 0 :
             # while driving reduce maximum turning speed, for smoother driving
             _robot.yaw_speed = max(-MINYAWSPEED/4, min(_robot.yaw_speed, MINYAWSPEED/4))
+
         else:
             # turn while standing still, use minimum turning speed
-            if  _robot.yaw_speed > 0: 
+            if  _robot.yaw_speed > 0:
                 if _robot.yaw_speed < MAXYAWSPEED: _robot.yaw_speed = MAXYAWSPEED
             if  _robot.yaw_speed < 0:
                 if _robot.yaw_speed > -MAXYAWSPEED: _robot.yaw_speed = -MAXYAWSPEED
@@ -399,6 +417,7 @@ def reverse_robot(_robot=Robot()):
     _robot.yaw_speed = 0
     # have we driven far enough backward? distance is trigger, could also be timed reverse driving
     if (input.running_time() - _robot.backup_starttime) < 750: # 0.75 seconds
+        _robot.looking_for_object = 0
     #if dist_err < _robot.backup_distance:
         _robot.speed = BACKUPSPEED
         _finished = False
@@ -583,12 +602,15 @@ def do_robot(_robot=Robot()):
         find_target(_robot)
         if _robot.target_locked:
             _robot.steering_only = False
+                                                     
             _robot.gripper_open()
             _robot.state = GRABOBJECT
             showText("GRABOBJECT: " + str(_robot.objecttype))
+            
     elif _robot.state == GRABOBJECT:
         _dist_to_travel = move_robot(_robot)
         if _dist_to_travel <= OBJECT_THRESHOLD+5:
+                                                      
             _robot.gripper_close()
             _proceed = False
             # target reached, release route
@@ -733,7 +755,7 @@ def next_destination(_location, objecttype = None):
     # if we pick up an object, object nr tels us where to go
     if (_location in storagearea) and (objecttype is not None):
         # were need the collected object go to?
-        nxt_dest = target[objecttype] 
+        nxt_dest = target[objecttype]
         # is target location left or rigth of us?
         if nxt_dest in target[1:int(numtargets/2)+1]:
             target_dir = LEFT
@@ -943,14 +965,6 @@ def on_serial_received():
     pass
 serial.on_data_received(serial.delimiters(Delimiters.NEW_LINE), on_serial_received)
 
-'''
-def on_received_value(name, value):
-    if name == "speed":
-        speed = value
-    if name == "steer":
-        steer = value
-radio.on_received_value(on_received_value)# parameters
-'''
 
 def on_radio_received(receivedString):
     global robot, stopping, DEBUG, RadioTxPending
@@ -960,7 +974,7 @@ def on_radio_received(receivedString):
     for d in range (len(data)):
         if DEBUG: serial.write_line(data[d])
     _id = int(data[0])
-    if _id == robot.id:    
+    if _id == robot.id:
         # this message is send for us
         _cmd = int(data[1])
         if _cmd == 0:
@@ -1040,6 +1054,7 @@ def on_forever():
         if newdata:
             newdata = False # sync to Huskylens
             do_robot(robot)
+
     if HIL_Simulation: basic.pause(50)
     #print_data() -> background loop
     if stopping:
@@ -1055,7 +1070,7 @@ basic.forever(on_forever)
 
 def on_in_background():
     #Huskylens
-    global t_start, t_last, dt_AI, inview, tagsInView, inview_count, x, y, w, h, newdata
+    global t_start, t_last, dt_AI, inview, tagsInView, inview_count, x, y, w, h, newdata, zeroes
     # approx 56 ms -> ~ 18 fps
     t_start = input.running_time()
     t_last = t_start
@@ -1067,7 +1082,7 @@ def on_in_background():
         t_last = t_start
         huskylens.request()
         inview = huskylens.get_box(HUSKYLENSResultType_t.HUSKYLENS_RESULT_BLOCK)
-        tagsInView = [0] #zeroes
+        tagsInView = zeroes
         k = 0
         while k < inview:
             tagsInView[k] = huskylens.readBox_ss(k + 1, Content3.ID)
@@ -1081,10 +1096,12 @@ def on_in_background():
             inview_count = 0
         else:
             inview_count += 1
-            if inview_count > 3: # if 3 frames no valid tag, reset to 0
+            if inview_count > 5: # if 3 frames no valid tag, reset to 0
                 x = -1
                 y = -1
                 w = -1
                 h = -1
-        newdata = True    
+        newdata = True
+
+                          
 control.in_background(on_in_background)
