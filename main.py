@@ -1,6 +1,6 @@
 CollisionDetection = False
-RandomDestination = False
-HIL_Simulation = False
+RandomDestination = True # random object or object based on own ID
+HIL_Simulation = True    # run code on 
 FirstClaimDestination = True # True: wait for destination area te be cleared.
                              # False: turn towards destination even if it is occupied
 UseFleetmanager = True
@@ -8,20 +8,21 @@ ID = 1
 
 DEBUG = False
 
-UseHusky = True
+UseHusky = False
 DisplayDelay = 200
 
 def showText(txt):
     #if not HIL_Simulation:
+    if UseHusky:
         txt = str(ID) + ' ' + txt
         huskylens.clear_osd()
         huskylens.write_osd(txt, 30, 30)
         if HIL_Simulation: basic.pause(DisplayDelay)
 
 
-UseHusky = True
 ######################################
 serial.redirect_to_usb()
+serial.write_string("I am alive")
 if not HIL_Simulation or UseHusky:
     huskylens.init_i2c()
     huskylens.init_mode(protocolAlgorithm.ALGORITHM_TAG_RECOGNITION)
@@ -126,7 +127,7 @@ tagsInView = zeroes
 #---------------------------------------------------------------------------------------------------------
 def open_gripper():
     opengripper = True
-    maqueen.servo_run(maqueen.Servos.S1, 70)
+    maqueen.servo_run(maqueen.Servos.S1, 85)
     return opengripper
 
 
@@ -279,7 +280,7 @@ def pulse(_dir=LEFT,_robot=Robot()):
     pulse_duration = 700  # Duration of one complete pulse cycle
     active_ratio = 0.2  # Ratio of time the robot is actively turning within a pulse
     base_speed = 15
-    speed_multiplier = 2
+    speed_multiplier = 1.5
 
     if robot.state == FINDOBJECT:
         speed_multiplier = 1.5
@@ -574,7 +575,7 @@ def do_robot(_robot=Robot()):
                 # switch state and start looking for object
                 showText("FINDOBJECT: " + str(_robot.objecttype))
                 pass
-        elif _dist_to_travel < 5:
+        elif _dist_to_travel <= 0:
             # target reached, release route
             if UseFleetmanager:
                 _proceed = False
@@ -894,7 +895,7 @@ def check_routes(_loc, _dest, _id):
 #---------------------------------------------------------------------------------------------------------
 
 def on_button_pressed_a():
-    global stopping, robot
+    global stopping, robot, DEBUG
     stopping = False
     robot.active = True
     if DEBUG: serial.write_line('button pressed')
@@ -902,13 +903,14 @@ def on_button_pressed_a():
     pass
 input.on_button_pressed(Button.A, on_button_pressed_a)
 
+'''
 def on_button_pressed_b():
     global stopping
     stopping = True
     if DEBUG: serial.write_line('reset')
     pass
 input.on_button_pressed(Button.B, on_button_pressed_b)
-
+'''
 
 def leading_zeros(_num, _digits):
     _str = '0'
@@ -928,7 +930,7 @@ def leading_zeros(_num, _digits):
                 _str = str(_num)
     return _str
 
-
+'''
 def print_data():
     global robot, DEBUG
     if DEBUG:
@@ -950,8 +952,9 @@ def print_data():
         serial.write_line('--')
     pass
 loops.every_interval(500, print_data)
+'''
 
-
+'''
 def on_serial_received():
     global stopping, robot
     data = serial.read_line()
@@ -963,20 +966,28 @@ def on_serial_received():
         stopping = True
         serial.write_line('remotely reset')
     pass
+    basic.pause(100) # yield for other processes
 serial.on_data_received(serial.delimiters(Delimiters.NEW_LINE), on_serial_received)
-
+'''
 
 def on_radio_received(receivedString):
-    global robot, stopping, DEBUG, RadioTxPending
-    radio_rx_data = receivedString
-    if DEBUG: serial.write_line("rx:" + radio_rx_data)
-    data = radio_rx_data.split(',')
-    for d in range (len(data)):
-        if DEBUG: serial.write_line(data[d])
-    _id = int(data[0])
-    if _id == robot.id:
+    global robot, stopping, DEBUG, RadioTxPending, WaitingForReply
+    # cmd reply
+    # 0123456
+    # 1,1,1,1
+    # optimised without string split, and earlier reject of message
+    # radio_rx_data = receivedString
+    if receivedString[0] == str(robot.id):
+        #if DEBUG: serial.write_line("this is for us")
+        #if DEBUG: serial.write_line("rx:" + receivedString)
+        #data = radio_rx_data.split(',')
+        #for d in range (len(data)):
+        #    if DEBUG: serial.write_line(data[d])
+        #_id = int(data[0])
+        #if _id == robot.id:
         # this message is send for us
-        _cmd = int(data[1])
+        #_cmd = int(data[1])
+        _cmd = int(receivedString[2])
         if _cmd == 0:
             # send status report or pending command
             #robot.cmd = STATUS_UPDATE
@@ -984,19 +995,22 @@ def on_radio_received(receivedString):
         elif _cmd == 1:
             # NOK/OK claim destination reply
             # data[2] = NOK/OK, data[3] = claimed id
-            if int(data[3]) == robot.id:
+            #if int(data[3]) == robot.id:
+            if int(receivedString[6]) == robot.id:
                 robot.reply = OK
                 robot.cmd = 0 # no more commands
             pass
         elif _cmd == 2:
             # ACK releaseposition
-            if int(data[2]) == 2:
+            #if int(data[2]) == 2:
+            if int(receivedString[4]) == 2:
                 robot.reply = ACK
                 robot.cmd = 0
             pass
         elif _cmd == 3:
             # ACK releaseroute
-            if int(data[2]) == 2:
+            #if int(data[2]) == 2:
+            if int(receivedString[4]) == 2:
                 robot.reply = ACK
                 robot.cmd = 0
             pass
@@ -1012,8 +1026,10 @@ def on_radio_received(receivedString):
             pass
 
         RadioTxPending = True
+        WaitingForReply = False
         #radio_transmit(robot)
-        if DEBUG: serial.write_line("sending radio")
+        #if DEBUG: serial.write_line("sending radio")
+        yield_(5) # yield for other processes
     pass
 radio.on_received_string(on_radio_received)
 
@@ -1035,6 +1051,9 @@ def radio_transmit(_robot=Robot()):
     #radio.send_string(str("target " ) + str(robot.target) + str("  ") + locationnames[robot.target] + '\r\n')
 #loops.every_interval(250, on_every_interval)
 
+def yield_(_t=50):
+    basic.pause(_t)
+
 
 #---------------------------------------------------------------------------------------------------------
 # actual main loop
@@ -1043,14 +1062,29 @@ stopping = False
 radio.set_group(1)
 close_gripper()
 
+RadioTxTime = input.running_time()
+WaitingForReply = False 
 
 def on_forever():
 
-    global stopping, HIL_Simulation, robot, newdata, RadioTxPending
+    global stopping, HIL_Simulation, robot, newdata, RadioTxPending, RadioTxTime, WaitingForReply
     if not stopping:
-        if RadioTxPending:
-            radio_transmit(robot)
-            RadioTxPending =  False
+        if (robot.cmd == CLAIM_DESTINATION or robot.cmd == RELEASE_ROUTE) and not WaitingForReply:
+            if DEBUG: serial.write_line("radio tx")
+            RadioTxPending = True
+        #if RadioTxPending and not WaitingForReply:
+            radio_transmit(robot) # send message
+            RadioTxPending =  False # we have send the message
+            RadioTxTime = input.running_time() # note send time
+            WaitingForReply = True # start waiting for reply
+        if WaitingForReply and (RadioTxTime - input.running_time()) > 1000: # timeout after 1 second
+            RadioTxPending = True # retry
+            WaitingForReply = False
+            RadioTxTime = input.running_time()
+            
+        if HIL_Simulation: 
+            basic.pause(50)
+            newdata = True
         if newdata:
             newdata = False # sync to Huskylens
             do_robot(robot)
@@ -1065,7 +1099,10 @@ def on_forever():
         robot.objecttype = None
         robot.state = IDLE
     pass
+    yield_(5) # yield for other processes
+
 basic.forever(on_forever)
+
 
 
 def on_in_background():
@@ -1081,6 +1118,7 @@ def on_in_background():
         # loop time
         t_last = t_start
         huskylens.request()
+        #yield_(20) # yield for other processes
         inview = huskylens.get_box(HUSKYLENSResultType_t.HUSKYLENS_RESULT_BLOCK)
         tagsInView = zeroes
         k = 0

@@ -1,30 +1,35 @@
 let numwaitingareas: number;
 let i: number;
 let CollisionDetection = false
-let RandomDestination = false
-let HIL_Simulation = false
+let RandomDestination = true
+//  random object or object based on own ID
+let HIL_Simulation = true
+//  run code on 
 let FirstClaimDestination = true
 //  True: wait for destination area te be cleared.
 //  False: turn towards destination even if it is occupied
 let UseFleetmanager = true
 let ID = 1
 let DEBUG = false
-let UseHusky = true
+let UseHusky = false
 let DisplayDelay = 200
 function showText(txt: string) {
     // if not HIL_Simulation:
-    txt = "" + ID + " " + txt
-    huskylens.clearOSD()
-    huskylens.writeOSD(txt, 30, 30)
-    if (HIL_Simulation) {
-        basic.pause(DisplayDelay)
+    if (UseHusky) {
+        txt = "" + ID + " " + txt
+        huskylens.clearOSD()
+        huskylens.writeOSD(txt, 30, 30)
+        if (HIL_Simulation) {
+            basic.pause(DisplayDelay)
+        }
+        
     }
     
 }
 
-UseHusky = true
 // #####################################
 serial.redirectToUSB()
+serial.writeString("I am alive")
 if (!HIL_Simulation || UseHusky) {
     huskylens.initI2c()
     huskylens.initMode(protocolAlgorithm.ALGORITHM_TAG_RECOGNITION)
@@ -127,7 +132,7 @@ let tagsInView = zeroes
 // ---------------------------------------------------------------------------------------------------------
 function open_gripper(): boolean {
     let opengripper = true
-    maqueen.servoRun(maqueen.Servos.S1, 70)
+    maqueen.servoRun(maqueen.Servos.S1, 85)
     return opengripper
 }
 
@@ -337,7 +342,7 @@ function pulse(_dir: number = LEFT, _robot: Robot = new Robot()): number {
     let active_ratio = 0.2
     //  Ratio of time the robot is actively turning within a pulse
     let base_speed = 15
-    let speed_multiplier = 2
+    let speed_multiplier = 1.5
     if (robot.state == FINDOBJECT) {
         speed_multiplier = 1.5
         if (robot.looking_for_object == 0) {
@@ -714,7 +719,7 @@ function do_robot(_robot: Robot = new Robot()) {
                 
             }
             
-        } else if (_dist_to_travel < 5) {
+        } else if (_dist_to_travel <= 0) {
             //  target reached, release route
             if (UseFleetmanager) {
                 _proceed = false
@@ -1140,15 +1145,15 @@ input.onButtonPressed(Button.A, function on_button_pressed_a() {
     showText("ACTIVE")
     
 })
-input.onButtonPressed(Button.B, function on_button_pressed_b() {
-    
-    stopping = true
-    if (DEBUG) {
-        serial.writeLine("reset")
-    }
-    
-    
-})
+/** 
+def on_button_pressed_b():
+    global stopping
+    stopping = True
+    if DEBUG: serial.write_line('reset')
+    pass
+input.on_button_pressed(Button.B, on_button_pressed_b)
+
+ */
 function leading_zeros(_num: number, _digits: number): string {
     let _str = "0"
     _num = Math.round(_num)
@@ -1179,65 +1184,66 @@ function leading_zeros(_num: number, _digits: number): string {
     return _str
 }
 
-loops.everyInterval(500, function print_data() {
-    let _cmd: number;
-    let _chk: any;
-    let _str: string;
-    
-    if (DEBUG) {
-        serial.writeValue("# ", control.deviceSerialNumber())
-        serial.writeLine("speed " + robot.speed)
-        serial.writeLine("yaw speed " + robot.yaw_speed)
-        serial.writeLine("distance target" + robot.distance_to_target)
-        serial.writeValue("state", robot.state)
-        serial.writeLine(state_names[robot.state])
-        serial.writeLine("" + "target " + ("" + robot.target) + ("" + "  ") + locationnames[robot.target])
-        serial.writeValue("distance", robot.distance_to_target)
-        serial.writeValue("speed", robot.speed)
+/** 
+def print_data():
+    global robot, DEBUG
+    if DEBUG:
+        serial.write_value("# ", control.device_serial_number())
+        serial.write_line("speed "+robot.speed)
+        serial.write_line("yaw speed "+robot.yaw_speed)
+        serial.write_line("distance target"+robot.distance_to_target)
+        serial.write_value("state", robot.state)
+        serial.write_line(state_names[robot.state])
+        serial.write_line(str("target " ) + str(robot.target) + str("  ") + locationnames[robot.target])
+        serial.write_value("distance", robot.distance_to_target)
+        serial.write_value("speed", robot.speed)
         _cmd = 0
         _chk = (robot.id + _cmd + robot.state + robot.location + robot.destination + robot.target + robot.distance_to_target) % 8
-        _str = leading_zeros(robot.id, 2) + ("" + _cmd) + ("" + robot.state) + leading_zeros(robot.location, 2) + leading_zeros(robot.destination, 2) + leading_zeros(robot.target, 2) + leading_zeros(robot.distance_to_target, 3) + leading_zeros(robot.speed, 3) + ("" + _chk) + "\r\n"
-        serial.writeLine(_str)
-        serial.writeLine("--")
-    }
-    
-    
-})
-serial.onDataReceived(serial.delimiters(Delimiters.NewLine), function on_serial_received() {
-    
-    let data = serial.readLine()
-    if (data == "a") {
-        stopping = false
-        robot.active = true
-        serial.writeLine("remotley started")
-    }
-    
-    if (data == "b") {
-        stopping = true
-        serial.writeLine("remotely reset")
-    }
-    
-    
-})
+        _str = (leading_zeros(robot.id,2) + str(_cmd) + str(robot.state) +
+                    leading_zeros(robot.location,2) + leading_zeros(robot.destination,2)  + leading_zeros(robot.target,2) +
+                    leading_zeros(robot.distance_to_target,3) + leading_zeros(robot.speed,3) + str(_chk) + "
+")
+        serial.write_line(_str)
+        serial.write_line('--')
+    pass
+loops.every_interval(500, print_data)
+
+ */
+/** 
+def on_serial_received():
+    global stopping, robot
+    data = serial.read_line()
+    if data == 'a':
+        stopping = False
+        robot.active = True
+        serial.write_line('remotley started')
+    if data == 'b':
+        stopping = True
+        serial.write_line('remotely reset')
+    pass
+    basic.pause(100) # yield for other processes
+serial.on_data_received(serial.delimiters(Delimiters.NEW_LINE), on_serial_received)
+
+ */
 radio.onReceivedString(function on_radio_received(receivedString: string) {
     let _cmd: number;
     
-    let radio_rx_data = receivedString
-    if (DEBUG) {
-        serial.writeLine("rx:" + radio_rx_data)
-    }
-    
-    let data = _py.py_string_split(radio_rx_data, ",")
-    for (let d = 0; d < data.length; d++) {
-        if (DEBUG) {
-            serial.writeLine(data[d])
-        }
-        
-    }
-    let _id = parseInt(data[0])
-    if (_id == robot.id) {
+    //  cmd reply
+    //  0123456
+    //  1,1,1,1
+    //  optimised without string split, and earlier reject of message
+    //  radio_rx_data = receivedString
+    if (receivedString[0] == "" + robot.id) {
+        // if DEBUG: serial.write_line("this is for us")
+        // if DEBUG: serial.write_line("rx:" + receivedString)
+        // data = radio_rx_data.split(',')
+        // for d in range (len(data)):
+        //     if DEBUG: serial.write_line(data[d])
+        // _id = int(data[0])
+        // if _id == robot.id:
         //  this message is send for us
-        _cmd = parseInt(data[1])
+        // _cmd = int(data[1])
+        _cmd = parseInt(receivedString[2])
         if (_cmd == 0) {
             //  send status report or pending command
             // robot.cmd = STATUS_UPDATE
@@ -1245,7 +1251,8 @@ radio.onReceivedString(function on_radio_received(receivedString: string) {
         } else if (_cmd == 1) {
             //  NOK/OK claim destination reply
             //  data[2] = NOK/OK, data[3] = claimed id
-            if (parseInt(data[3]) == robot.id) {
+            // if int(data[3]) == robot.id:
+            if (parseInt(receivedString[6]) == robot.id) {
                 robot.reply = OK
                 robot.cmd = 0
             }
@@ -1254,7 +1261,8 @@ radio.onReceivedString(function on_radio_received(receivedString: string) {
             
         } else if (_cmd == 2) {
             //  ACK releaseposition
-            if (parseInt(data[2]) == 2) {
+            // if int(data[2]) == 2:
+            if (parseInt(receivedString[4]) == 2) {
                 robot.reply = ACK
                 robot.cmd = 0
             }
@@ -1262,7 +1270,8 @@ radio.onReceivedString(function on_radio_received(receivedString: string) {
             
         } else if (_cmd == 3) {
             //  ACK releaseroute
-            if (parseInt(data[2]) == 2) {
+            // if int(data[2]) == 2:
+            if (parseInt(receivedString[4]) == 2) {
                 robot.reply = ACK
                 robot.cmd = 0
             }
@@ -1281,13 +1290,13 @@ radio.onReceivedString(function on_radio_received(receivedString: string) {
         }
         
         RadioTxPending = true
+        WaitingForReply = false
         // radio_transmit(robot)
-        if (DEBUG) {
-            serial.writeLine("sending radio")
-        }
-        
+        // if DEBUG: serial.write_line("sending radio")
+        yield_(5)
     }
     
+    //  yield for other processes
     
 })
 function radio_transmit(_robot: Robot = new Robot()) {
@@ -1305,18 +1314,50 @@ function radio_transmit(_robot: Robot = new Robot()) {
 // radio.send_string("\r\n" )
 // radio.send_string(str("target " ) + str(robot.target) + str("  ") + locationnames[robot.target] + '\r\n')
 // loops.every_interval(250, on_every_interval)
+function yield_(_t: number = 50) {
+    basic.pause(_t)
+}
+
 // ---------------------------------------------------------------------------------------------------------
 //  actual main loop
 // ---------------------------------------------------------------------------------------------------------
 let stopping = false
 radio.setGroup(1)
 close_gripper()
+let RadioTxTime = input.runningTime()
+let WaitingForReply = false
+//  yield for other processes
 basic.forever(function on_forever() {
     
     if (!stopping) {
-        if (RadioTxPending) {
+        if ((robot.cmd == CLAIM_DESTINATION || robot.cmd == RELEASE_ROUTE) && !WaitingForReply) {
+            if (DEBUG) {
+                serial.writeLine("radio tx")
+            }
+            
+            RadioTxPending = true
+            // if RadioTxPending and not WaitingForReply:
             radio_transmit(robot)
+            //  send message
             RadioTxPending = false
+            //  we have send the message
+            RadioTxTime = input.runningTime()
+            //  note send time
+            WaitingForReply = true
+        }
+        
+        //  start waiting for reply
+        if (WaitingForReply && RadioTxTime - input.runningTime() > 1000) {
+            //  timeout after 1 second
+            RadioTxPending = true
+            //  retry
+            WaitingForReply = false
+            RadioTxTime = input.runningTime()
+        }
+        
+        if (HIL_Simulation) {
+            basic.pause(50)
+            newdata = true
         }
         
         if (newdata) {
@@ -1342,6 +1383,7 @@ basic.forever(function on_forever() {
     }
     
     
+    yield_(5)
 })
 control.inBackground(function on_in_background() {
     let k: number;
@@ -1356,6 +1398,7 @@ control.inBackground(function on_in_background() {
         //  loop time
         t_last = t_start
         huskylens.request()
+        // yield_(20) # yield for other processes
         inview = huskylens.getBox(HUSKYLENSResultType_t.HUSKYLENSResultBlock)
         tagsInView = zeroes
         k = 0
